@@ -4,10 +4,13 @@
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-simple-framework-for-open-vocabulary/instance-segmentation-on-ade20k-val)](https://paperswithcode.com/sota/instance-segmentation-on-ade20k-val?p=a-simple-framework-for-open-vocabulary)
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-simple-framework-for-open-vocabulary/instance-segmentation-on-cityscapes-val)](https://paperswithcode.com/sota/instance-segmentation-on-cityscapes-val?p=a-simple-framework-for-open-vocabulary)
 
+[![IMAGE ALT TEXT HERE](figs/cover.jpg)](https://www.youtube.com/watch?v=z4gsQw2n7iM)
 
+![hero_figure](figs/intro.jpg)
 This is the official implementation of the paper "[A Simple Framework for Open-Vocabulary Segmentation and Detection](https://arxiv.org/pdf/2303.08131.pdf)". 
 
 Code will be released soon.
+
 # Key Features
 A Simple Framework for Open-Vocabulary Segmentation and Detection.
 
