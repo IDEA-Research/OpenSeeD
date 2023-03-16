@@ -13,8 +13,6 @@ https://user-images.githubusercontent.com/34880758/225408795-d1e714e0-cfc8-4466-
 You can also find the more detailed demo at [video link on Youtube](https://www.youtube.com/watch?v=z4gsQw2n7iM).
 
 
-![hero_figure](figs/intro.jpg)
-
 
 # Key Features
 A Simple Framework for Open-Vocabulary Segmentation and Detection.
