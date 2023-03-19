@@ -27,3 +27,16 @@ Results on open segmentation
 Results on task transfer and segmentation in the wild
 ![hero_figure](figs/results2.jpg)
 
+## <a name="CitingOpenSeeD"></a>Citing OpenSeeD
+
+If you find our work helpful for your research, please consider citing the following BibTeX entry.
+
+```BibTeX
+@article{zhang2023simple,
+  title={A Simple Framework for Open-Vocabulary Segmentation and Detection},
+  author={Zhang, Hao and Li, Feng and Zou, Xueyan and Liu, Shilong and Li, Chunyuan and Gao, Jianfeng and Yang, Jianwei and Zhang, Lei},
+  journal={arXiv preprint arXiv:2303.08131},
+  year={2023}
+}
+```
+
