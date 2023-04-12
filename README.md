@@ -15,7 +15,8 @@ You can also find the more detailed demo at [video link on Youtube](https://www.
 
 
 # Key Features
-A Simple Framework for Open-Vocabulary Segmentation and Detection.
+- A Simple Framework for Open-Vocabulary Segmentation and Detection.
+- Support interactive segmentation with box input to generate mask.
 
 
 ![hero_figure](figs/intro.jpg)
