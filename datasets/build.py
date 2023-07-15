@@ -2,6 +2,7 @@
 import os
 import itertools
 import logging
+import copy
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
@@ -28,6 +29,7 @@ from detectron2.evaluation import (
     verify_results,
 )
 from fvcore.common.config import CfgNode
+from omegaconf import DictConfig, OmegaConf
 
 from .dataset_mappers import (
     COCOInstanceNewBaselineDatasetMapper,
@@ -35,17 +37,22 @@ from .dataset_mappers import (
     MaskFormerInstanceDatasetMapper,
     MaskFormerPanopticDatasetMapper,
     MaskFormerSemanticDatasetMapper,
+    ImageNetDatasetMapper,
+    VLPreDatasetMapper,
+    SunRGBDSegDatasetMapper,
+    ScanNetSegDatasetMapper,
+    BDDSemDatasetMapper,
+    ScanNetPanoDatasetMapper,
+    RefCOCODatasetMapper,
+    O365InstanceNewBaselineDatasetMapper,
 )
-from .evaluation import (InstanceSegEvaluator, 
-                         ClassificationEvaluator, 
-                         SemSegEvaluator, 
-                         RetrievalEvaluator, 
-                         CaptioningEvaluator, 
+from .evaluation import (InstanceSegEvaluator,
+                         SemSegEvaluator,
                          COCOPanopticEvaluator,
-                         GroundingEvaluator,
 )
 from openseed.utils import configurable
 from utils.distributed import get_world_size
+from typing import Any, Dict, List, Set
 
 class JointLoader(torchdata.IterableDataset):
     def __init__(self, loaders, key_dataset):
@@ -154,7 +161,10 @@ def _test_loader_from_config(cfg, dataset_name, mapper=None):
         filter_empty=False,
         proposal_files=None,
     )
+    # import ipdb;ipdb.set_trace()
     if mapper is None:
+        if isinstance(cfg, (DictConfig)):
+            cfg = OmegaConf.to_container(copy.deepcopy(cfg))
         mapper_cfg = CfgNode({'INPUT': cfg['INPUT'], 'MODEL': cfg['MODEL'], 'DATASETS': cfg['DATASETS']})
         mapper = DatasetMapper(mapper_cfg, False)
     assert cfg['TEST']['BATCH_SIZE_TOTAL'] % get_world_size() == 0, "Evaluation total batchsize is not divisible by gpu number"
@@ -335,6 +345,9 @@ def get_config_from_name(cfg, dataset_name):
     elif 'sun' in dataset_name:
         cfg.update(cfg['SUN'])
         return cfg
+    elif 'object365' in dataset_name:
+        cfg.update(cfg['OBJECT365'])
+        return cfg
     elif 'scan' in dataset_name:
         cfg.update(cfg['SCAN'])
         return cfg
@@ -350,11 +363,28 @@ def get_config_from_name(cfg, dataset_name):
 
 def build_eval_dataloader(cfg, ):
     dataloaders = []
+    cfg = copy.deepcopy(cfg)
     for dataset_name in cfg['DATASETS']['TEST']:
         cfg = get_config_from_name(cfg, dataset_name)
         # adjust mapper according to dataset
-        mapper = None
+        if dataset_name == 'imagenet_val':
+            mapper = ImageNetDatasetMapper(cfg, False)
+        elif dataset_name == 'bdd10k_val_sem_seg':
+            mapper = BDDSemDatasetMapper(cfg, False)
+        elif dataset_name in ["vlp_val", "vlp_captioning_val", "vlp_val2017", "vlp_captioning_val2017"]:
+            mapper = VLPreDatasetMapper(cfg, False, dataset_name)
+        elif dataset_name in ["scannet_21_val_seg", "scannet_38_val_seg", "scannet_41_val_seg"]:
+            mapper = ScanNetSegDatasetMapper(cfg, False)
+        elif dataset_name in ["scannet_21_panoptic_val", 'bdd10k_40_panoptic_val']:
+            mapper = ScanNetPanoDatasetMapper(cfg, False)
+        elif 'sun' in dataset_name:
+            mapper = SunRGBDSegDatasetMapper(cfg, False)
+        elif 'refcoco' in dataset_name:
+            mapper = RefCOCODatasetMapper(cfg, False)
+        else:
+            mapper = None
         dataloaders += [build_detection_test_loader(cfg, dataset_name, mapper=mapper)]
+        # dataloaders = build_detection_test_loader(cfg, dataset_name, mapper=mapper)
     return dataloaders
 
 
@@ -362,6 +392,7 @@ def build_train_dataloader(cfg, ):
     dataset_names = cfg['DATASETS']['TRAIN']
     
     loaders = {}
+    cfg = copy.deepcopy(cfg)
     for dataset_name in dataset_names:
         cfg = get_config_from_name(cfg, dataset_name)
         mapper_name = cfg['INPUT']['DATASET_MAPPER_NAME']
@@ -370,9 +401,9 @@ def build_train_dataloader(cfg, ):
             mapper = MaskFormerSemanticDatasetMapper(cfg, True)
             loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         # Panoptic segmentation dataset mapper
-        elif mapper_name == "mask_former_panoptic":
+        elif mapper_name == "mask_former_panoptic":   # TODO: Hack for ade training; should add ade name
             mapper = MaskFormerPanopticDatasetMapper(cfg, True)
-            loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders['ade'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         # Instance segmentation dataset mapper
         elif mapper_name == "mask_former_instance":
             mapper = MaskFormerInstanceDatasetMapper(cfg, True)
@@ -385,12 +416,26 @@ def build_train_dataloader(cfg, ):
         elif mapper_name == "coco_panoptic_lsj":
             mapper = COCOPanopticNewBaselineDatasetMapper(cfg, True)
             loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+
+        elif mapper_name == "object365":
+            mapper = O365InstanceNewBaselineDatasetMapper(cfg, True)  # Use lsj instance mapper for o365
+            loaders['o365'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+        elif mapper_name == "vlpretrain":
+            mapper = VLPreDatasetMapper(cfg, True, dataset_name)
+            loaders['vlp'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+        elif mapper_name == "refcoco":
+            mapper = RefCOCODatasetMapper(cfg, True)
+            loaders['ref'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         else:
             mapper = None
             loaders[dataset_name] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
-
+    # import ipdb; ipdb.set_trace()
     if len(loaders) == 1 and not cfg['LOADER'].get('JOINT', False):
+        for k, v in loaders.items():
+            print("number of iterations per epoch: ", v, len(loaders[k]))
         return list(loaders.values())[0]
+        # return loaders.values()['coco']
+        # return loaders['coco']
     else:
         return JointLoader(loaders, key_dataset=cfg['LOADER'].get('KEY_DATASET', 'coco'))
 
@@ -404,7 +449,7 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     hacky if-else logic here.
     """
     if output_folder is None:
-        output_folder = os.path.join(cfg["SAVE_DIR"], "inference")
+        output_folder = os.path.join(cfg["OUTPUT_DIR"], "inference")
     evaluator_list = []
     evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
 
@@ -496,3 +541,98 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
         
     
     return DatasetEvaluators(evaluator_list)
+
+
+def build_optimizer(cls, cfg, model):
+    cfg_solver = cfg['SOLVER']
+    weight_decay_norm = cfg_solver['WEIGHT_DECAY_NORM']
+    weight_decay_embed = cfg_solver['WEIGHT_DECAY_EMBED']
+    weight_decay_bias = cfg_solver.get('WEIGHT_DECAY_BIAS', 0.0)
+
+    defaults = {}
+    defaults["lr"] = cfg_solver['BASE_LR']
+    defaults["weight_decay"] = cfg_solver['WEIGHT_DECAY']
+
+    norm_module_types = (
+        torch.nn.BatchNorm1d,
+        torch.nn.BatchNorm2d,
+        torch.nn.BatchNorm3d,
+        torch.nn.SyncBatchNorm,
+        # NaiveSyncBatchNorm inherits from BatchNorm2d
+        torch.nn.GroupNorm,
+        torch.nn.InstanceNorm1d,
+        torch.nn.InstanceNorm2d,
+        torch.nn.InstanceNorm3d,
+        torch.nn.LayerNorm,
+        torch.nn.LocalResponseNorm,
+    )
+
+    lr_multiplier = cfg['SOLVER']['LR_MULTIPLIER']
+
+    # for _module_name in model.module_names:
+    #     # parameters = self.raw_modules[module_name].get_training_parameters()
+    #     # self.optimizers[module_name] = optimizer_class(parameters, **optimizer_parameters)
+    #     # params = []
+    #     # for module_param_name, value in self.raw_modules[module_name].named_parameters(recurse=True):
+    params: List[Dict[str, Any]] = []
+    memo: Set[torch.nn.parameter.Parameter] = set()
+    for module_name, module in model.named_modules():
+        for module_param_name, value in module.named_parameters(recurse=False):
+            if not value.requires_grad:
+                continue
+            # Avoid duplicating parameters
+            if value in memo:
+                continue
+            memo.add(value)
+
+            hyperparams = copy.copy(defaults)
+
+            for key, lr_mul in lr_multiplier.items():
+                if key in "{}.{}".format(module_name, module_param_name):
+                    hyperparams["lr"] = hyperparams["lr"] * lr_mul
+                    if is_main_process():
+                        logger.info("Modify Learning rate of {}: {}".format(
+                            "{}.{}".format(module_name, module_param_name), lr_mul))
+
+            if (
+                    "relative_position_bias_table" in module_param_name
+                    or "absolute_pos_embed" in module_param_name
+            ):
+                hyperparams["weight_decay"] = 0.0
+            if isinstance(module, norm_module_types):
+                hyperparams["weight_decay"] = weight_decay_norm
+            if isinstance(module, torch.nn.Embedding):
+                hyperparams["weight_decay"] = weight_decay_embed
+            if "bias" in module_name:
+                hyperparams["weight_decay"] = weight_decay_bias
+            params.append({"params": [value], **hyperparams})
+
+    def maybe_add_full_model_gradient_clipping(optim):
+        # detectron2 doesn't have full model gradient clipping now
+        clip_norm_val = cfg_solver['CLIP_GRADIENTS']['CLIP_VALUE']
+        enable = (
+                cfg_solver['CLIP_GRADIENTS']['ENABLED']
+                and cfg_solver['CLIP_GRADIENTS']['CLIP_TYPE'] == "full_model"
+                and clip_norm_val > 0.0
+        )
+
+        class FullModelGradientClippingOptimizer(optim):
+            def step(self, closure=None):
+                all_params = itertools.chain(*[x["params"] for x in self.param_groups])
+                torch.nn.utils.clip_grad_norm_(all_params, clip_norm_val)
+                super().step(closure=closure)
+
+        return FullModelGradientClippingOptimizer if enable else optim
+
+    optimizer_type = cfg_solver['OPTIMIZER']
+    if optimizer_type == "SGD":
+        optimizer = maybe_add_full_model_gradient_clipping(torch.optim.SGD)(
+            params, cfg_solver['BASE_LR'], momentum=cfg_solver['MOMENTUM']
+        )
+    elif optimizer_type == "ADAMW":
+        optimizer = maybe_add_full_model_gradient_clipping(torch.optim.AdamW)(
+            params, cfg_solver['BASE_LR']
+        )
+    else:
+        raise NotImplementedError(f"no optimizer type {optimizer_type}")
+    return optimizer

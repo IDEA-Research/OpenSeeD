@@ -1,4 +1,10 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
+# ------------------------------------------------------------------------
+# DINO
+# Copyright (c) 2023 IDEA. All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 [see LICENSE for details]
+# ------------------------------------------------------------------------
+# Modified from MaskDINO https://github.com/IDEA-Research/MaskDINO by Feng Li and Hao Zhang.
+# ------------------------------------------------------------------------
 from typing import Tuple
 
 import torch
@@ -9,7 +15,7 @@ from .registry import register_model
 from ..utils import configurable, box_ops, get_class_names
 from ..backbone import build_backbone, Backbone
 from ..body import build_openseed_head
-from ..modules import sem_seg_postprocess
+from ..modules import sem_seg_postprocess, HungarianMatcher, SetCriterion
 from ..language import build_language_encoder
 
 from detectron2.structures import Boxes, ImageList, Instances, BitMasks
@@ -141,6 +147,63 @@ class OpenSeeD(nn.Module):
         enc_cfg = cfg['MODEL']['ENCODER']
         dec_cfg = cfg['MODEL']['DECODER']
 
+        # Loss parameters:
+        deep_supervision = dec_cfg['DEEP_SUPERVISION']
+        no_object_weight = dec_cfg['NO_OBJECT_WEIGHT']
+
+        # loss weights
+        class_weight = dec_cfg['CLASS_WEIGHT']
+        cost_class_weight = dec_cfg['COST_CLASS_WEIGHT']
+        cost_dice_weight = dec_cfg['COST_DICE_WEIGHT']
+        dice_weight = dec_cfg['DICE_WEIGHT']
+        cost_mask_weight = dec_cfg['COST_MASK_WEIGHT']
+        mask_weight = dec_cfg['MASK_WEIGHT']
+        cost_box_weight = dec_cfg['COST_BOX_WEIGHT']
+        box_weight = dec_cfg['BOX_WEIGHT']
+        cost_giou_weight = dec_cfg['COST_GIOU_WEIGHT']
+        giou_weight = dec_cfg['GIOU_WEIGHT']
+
+        # building matcher
+        matcher = HungarianMatcher(
+            cost_class=cost_class_weight,
+            cost_mask=cost_mask_weight,
+            cost_dice=cost_dice_weight,
+            cost_box=cost_box_weight,
+            cost_giou=cost_giou_weight,
+            num_points=dec_cfg['TRAIN_NUM_POINTS'],
+        )
+
+        # MaskDINO losses and weight_dict
+        weight_dict = {"loss_mask_cls_0": class_weight}
+        weight_dict.update({"loss_mask_bce_0": mask_weight, "loss_mask_dice_0": dice_weight})
+        weight_dict.update({"loss_bbox_0":box_weight,"loss_giou_0":giou_weight})
+        # two stage is the query selection scheme
+        if dec_cfg['TWO_STAGE']:
+            interm_weight_dict = {}
+            interm_weight_dict.update({k + f'_interm': v for k, v in weight_dict.items()})
+            weight_dict.update(interm_weight_dict)
+        # denoising training
+        dn = dec_cfg['DN']
+        # TODO hack for dn lable loss
+        if dn == "standard":
+            weight_dict.update({k + f"_dn": v for k, v in weight_dict.items() if k!="loss_mask" and k!="loss_dice" })
+            dn_losses=["dn_labels", "boxes"]
+        elif dn == "seg":
+            weight_dict.update({k + f"_dn": v for k, v in weight_dict.items()})
+            dn_losses=["dn_labels", "masks", "boxes"]
+        else:
+            dn_losses=[]
+        if deep_supervision:
+            dec_layers = dec_cfg['DEC_LAYERS']
+            aux_weight_dict = {}
+            for i in range(dec_layers):
+                aux_weight_dict.update({k.replace('_0', '_{}'.format(i+1)): v for k, v in weight_dict.items()})
+            weight_dict.update(aux_weight_dict)
+        if dec_cfg['BOX']:
+            losses = ["labels", "masks","boxes"]
+        else:
+            losses = ["labels", "masks"]
+
         # update task switch
         task_switch = {}
         task_switch.update({'bbox': dec_cfg.get('DETECTION', True), 'mask': dec_cfg.get('MASK', True)})
@@ -148,7 +211,22 @@ class OpenSeeD(nn.Module):
                         'box': dec_cfg.get('TOP_DETECTION_LAYERS', 10)}
 
         # building criterion
-        criterion = None
+        criterion = SetCriterion(
+            enc_cfg['NUM_CLASSES'],
+            matcher=matcher,
+            weight_dict=weight_dict,
+            top_x_layers=top_x_layers,
+            eos_coef=no_object_weight,
+            losses=losses,
+            num_points=dec_cfg['TRAIN_NUM_POINTS'],
+            oversample_ratio=dec_cfg['OVERSAMPLE_RATIO'],
+            importance_sample_ratio=dec_cfg['IMPORTANCE_SAMPLE_RATIO'],
+            grounding_weight=None,
+            dn=dec_cfg['DN'],
+            dn_losses=dn_losses,
+            panoptic_on=dec_cfg['PANO_BOX_LOSS'],
+            semantic_ce_loss=dec_cfg['TEST']['SEMANTIC_ON'] and dec_cfg['SEMANTIC_CE_LOSS'] and not dec_cfg['TEST']['PANOPTIC_ON'],
+        )
 
         # build model
         extra = {'task_switch': task_switch}
@@ -194,8 +272,32 @@ class OpenSeeD(nn.Module):
         return self.pixel_mean.device
 
     def forward(self, batched_inputs, inference_task='seg'):
-        processed_results = self.forward_seg(batched_inputs, task=inference_task)
-        return processed_results
+        # import ipdb; ipdb.set_trace()
+        if self.training:
+            losses = {}
+            if self.task_switch['coco']:
+                self.criterion.num_classes = 133 if 'pano' in self.train_dataset_name[0] else 80
+                # self.criterion.num_classes = 133
+                task = 'seg'
+                if not self.coco_mask_on:
+                    task = 'det'
+                # import ipdb; ipdb.set_trace()
+                losses_coco = self.forward_seg(batched_inputs['coco'], task=task)
+                new_losses_coco = {}
+                for key, value in losses_coco.items():
+                    new_losses_coco['coco.'+str(key)] = losses_coco[key]
+                losses.update(new_losses_coco)
+            if self.task_switch['o365']:
+                self.criterion.num_classes = 365
+                losses_o365 = self.forward_seg(batched_inputs['o365'], task='det')
+                new_losses_o365 = {}
+                for key, value in losses_o365.items():
+                    new_losses_o365['o365.'+str(key)] = losses_o365[key]
+                losses.update(new_losses_o365)
+            return losses
+        else:
+            processed_results = self.forward_seg(batched_inputs, task=inference_task)
+            return processed_results
 
     def forward_seg(self, batched_inputs, task='seg'):
         """
@@ -229,90 +331,133 @@ class OpenSeeD(nn.Module):
 
         features = self.backbone(images.tensor)
 
+        if self.training:
+            if task == "det" and self.task_switch['o365']:
+                train_class_names = [random.sample(name, 1)[0] for name in self.train_class_names['det']]
+            else:
+                train_class_names = self.train_class_names[task]
+            self.sem_seg_head.predictor.lang_encoder.get_text_embeddings(train_class_names, is_eval=False)
 
-        outputs, _ = self.sem_seg_head(features)
-        mask_cls_results = outputs["pred_logits"]
-        mask_box_results = outputs["pred_boxes"]
-        if 'seg' in task:
-            if task == 'seg':
-                self.semantic_on = self.panoptic_on = self.sem_seg_postprocess_before_inference = self.instance_on = True
-            if task == 'pan_seg':
-                self.semantic_on = self.instance_on = False
-                self.panoptic_on = True
-                self.sem_seg_postprocess_before_inference = True
-            if task == 'inst_seg':
-                self.semantic_on = self.panoptic_on = False
-                self.instance_on = True
-                self.sem_seg_postprocess_before_inference = True
-            if task == 'sem_pan_seg':
-                self.semantic_on = self.panoptic_on = True
-                self.instance_on = False
-                self.sem_seg_postprocess_before_inference = True
-            if task == 'inst_pan_seg':
-                self.instance_on = self.panoptic_on = True
-                self.semantic_on = False
-                self.sem_seg_postprocess_before_inference = True
-            if task == 'sem_seg':
-                self.instance_on = self.panoptic_on = False
-                self.semantic_on = True
-                self.sem_seg_postprocess_before_inference = True
-            mask_pred_results = outputs["pred_masks"]
-            # upsample masks
-            mask_pred_results = F.interpolate(
-                mask_pred_results,
-                size=(images.tensor.shape[-2], images.tensor.shape[-1]),
-                mode="bilinear",
-                align_corners=False,
-            )
+            # mask classification target
+            if "instances" in batched_inputs[0]:
+                gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+                targets = self.prepare_targets(gt_instances, images, task=task)
+            else:
+                targets = None
+            outputs, mask_dict = self.sem_seg_head(features, targets=targets, task=task)
+            # bipartite matching-based loss
+            losses = self.criterion(outputs, targets, mask_dict, task=task)
 
+            for k in list(losses.keys()):
+                if k in self.criterion.weight_dict:
+                    losses[k] *= self.criterion.weight_dict[k]
+                else:
+                    # remove this loss if not specified in `weight_dict`
+                    losses.pop(k)
+            return losses
         else:
-            self.semantic_on = self.panoptic_on = self.sem_seg_postprocess_before_inference = False
-            self.instance_on = True
-            mask_pred_results = torch.zeros(mask_box_results.shape[0], mask_box_results.shape[1],2, 2).to(mask_box_results)
-
-        del outputs
-
-        processed_results = []
-
-        for mask_cls_result, mask_pred_result, mask_box_result, input_per_image, image_size in zip(
-            mask_cls_results, mask_pred_results, mask_box_results, batched_inputs, images.image_sizes
-        ):
-            height = input_per_image.get("height", image_size[0])
-            width = input_per_image.get("width", image_size[1])
-            processed_results.append({})
-            new_size = (images.tensor.shape[-2], images.tensor.shape[-1])  # padded size (divisible to 32)
-
-
-            if self.sem_seg_postprocess_before_inference:
-                mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
-                    mask_pred_result, image_size, height, width
+            outputs, _ = self.sem_seg_head(features)
+            mask_cls_results = outputs["pred_logits"]
+            mask_box_results = outputs["pred_boxes"]
+            if 'seg' in task:
+                if task == 'seg':
+                    self.semantic_on = self.panoptic_on = self.sem_seg_postprocess_before_inference = self.instance_on = True
+                if task == 'inst_seg':
+                    self.semantic_on = self.panoptic_on = False
+                    self.instance_on = True
+                    self.sem_seg_postprocess_before_inference = True
+                if task == 'sem_pan_seg':
+                    self.semantic_on = self.panoptic_on = True
+                    self.instance_on = False
+                    self.sem_seg_postprocess_before_inference = True
+                if task == 'inst_pan_seg':
+                    self.instance_on = self.panoptic_on = True
+                    self.semantic_on = False
+                    self.sem_seg_postprocess_before_inference = True
+                if task == 'sem_seg':
+                    self.instance_on = self.panoptic_on = False
+                    self.semantic_on = True
+                    self.sem_seg_postprocess_before_inference = True
+                mask_pred_results = outputs["pred_masks"]
+                # upsample masks
+                mask_pred_results = F.interpolate(
+                    mask_pred_results,
+                    size=(images.tensor.shape[-2], images.tensor.shape[-1]),
+                    mode="bilinear",
+                    align_corners=False,
                 )
-                mask_cls_result = mask_cls_result.to(mask_pred_result)
 
-            # semantic segmentation inference
-            if self.semantic_on:
-                r = retry_if_cuda_oom(self.semantic_inference)(mask_cls_result, mask_pred_result)
-                if not self.sem_seg_postprocess_before_inference:
-                    r = retry_if_cuda_oom(sem_seg_postprocess)(r, image_size, height, width)
-                processed_results[-1]["sem_seg"] = r
+            else:
+                self.semantic_on = self.panoptic_on = self.sem_seg_postprocess_before_inference = False
+                self.instance_on = True
+                mask_pred_results = torch.zeros(mask_box_results.shape[0], mask_box_results.shape[1],2, 2).to(mask_box_results)
 
-            # panoptic segmentation inference
-            if self.panoptic_on:
-                panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
-                processed_results[-1]["panoptic_seg"] = panoptic_r
+            del outputs
 
-            # instance segmentation inference
+            processed_results = []
 
-            if self.instance_on:
-                mask_box_result = mask_box_result.to(mask_pred_result)
-                height = new_size[0]/image_size[0]*height
-                width = new_size[1]/image_size[1]*width
-                mask_box_result = self.box_postprocess(mask_box_result, height, width)
+            for mask_cls_result, mask_pred_result, mask_box_result, input_per_image, image_size in zip(
+                mask_cls_results, mask_pred_results, mask_box_results, batched_inputs, images.image_sizes
+            ):
+                height = input_per_image.get("height", image_size[0])
+                width = input_per_image.get("width", image_size[1])
+                processed_results.append({})
+                new_size = (images.tensor.shape[-2], images.tensor.shape[-1])  # padded size (divisible to 32)
 
-                instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, mask_box_result)
-                processed_results[-1]["instances"] = instance_r
-        del mask_pred_results
-        return processed_results
+
+                if self.sem_seg_postprocess_before_inference:
+                    mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
+                        mask_pred_result, image_size, height, width
+                    )
+                    mask_cls_result = mask_cls_result.to(mask_pred_result)
+
+                # semantic segmentation inference
+                if self.semantic_on:
+                    r = retry_if_cuda_oom(self.semantic_inference)(mask_cls_result, mask_pred_result)
+                    if not self.sem_seg_postprocess_before_inference:
+                        r = retry_if_cuda_oom(sem_seg_postprocess)(r, image_size, height, width)
+                    processed_results[-1]["sem_seg"] = r
+
+                # panoptic segmentation inference
+                if self.panoptic_on:
+                    panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
+                    processed_results[-1]["panoptic_seg"] = panoptic_r
+
+                # instance segmentation inference
+
+                if self.instance_on:
+                    mask_box_result = mask_box_result.to(mask_pred_result)
+                    height = new_size[0]/image_size[0]*height
+                    width = new_size[1]/image_size[1]*width
+                    mask_box_result = self.box_postprocess(mask_box_result, height, width)
+
+                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, mask_box_result)
+                    processed_results[-1]["instances"] = instance_r
+            del mask_pred_results
+            return processed_results
+
+    def prepare_targets(self, targets, images, task='seg'):
+        h_pad, w_pad = images.tensor.shape[-2:]
+        new_targets = []
+        for targets_per_image in targets:
+            # pad gt
+            h, w = targets_per_image.image_size
+            image_size_xyxy = torch.as_tensor([w, h, w, h], dtype=torch.float, device=self.device)
+
+            if task != 'det':
+                gt_masks = targets_per_image.gt_masks
+                padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
+                padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
+            else:
+                padded_masks = None
+            new_targets.append(
+                {
+                    "labels": targets_per_image.gt_classes,
+                    "masks": padded_masks,
+                    "boxes":box_ops.box_xyxy_to_cxcywh(targets_per_image.gt_boxes.tensor)/image_size_xyxy
+                }
+            )
+        return new_targets
 
     def semantic_inference(self, mask_cls, mask_pred):
         # if use cross-entropy loss in training, evaluate with softmax

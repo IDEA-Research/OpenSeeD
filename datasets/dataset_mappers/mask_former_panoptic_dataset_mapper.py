@@ -161,6 +161,7 @@ class MaskFormerPanopticDatasetMapper(MaskFormerSemanticDatasetMapper):
                 torch.stack([torch.from_numpy(np.ascontiguousarray(x.copy())) for x in masks])
             )
             instances.gt_masks = masks.tensor
+            instances.gt_boxes = masks.get_bounding_boxes()
 
         dataset_dict["instances"] = instances
 

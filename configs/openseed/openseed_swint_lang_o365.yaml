@@ -34,10 +34,10 @@ MODEL:
     ARCH: encoder
     NAME: transformer
     TOKENIZER: clip
-    CONTEXT_LENGTH: 18 # 18
+    CONTEXT_LENGTH: 77 # 77
     WIDTH: 512
     HEADS: 8
-    LAYERS: 12
+    LAYERS: 12 # 6
     AUTOGRESSIVE: True
   BACKBONE:
     NAME: swin
@@ -138,7 +138,7 @@ MODEL:
     SEMANTIC_CE_LOSS: False
     PANO_BOX_LOSS: False
     COCO: True
-    O365: False
+    O365: True
     TEST:
       SEMANTIC_ON: True
       INSTANCE_ON: True
@@ -224,9 +224,9 @@ INPUT:
   PIXEL_STD: [58.395, 57.120, 57.375]
 
 DATASETS:
-  TRAIN: ["coco_2017_train_panoptic", "ade20k_panoptic_train"]
+  TRAIN: ["coco_2017_train_panoptic", "object365_val_od"]
   # open vocabulary segmentation evaluation.
-  TEST: ["coco_2017_val_panoptic_with_sem_seg"]
+  TEST: ["coco_2017_val_panoptic_with_sem_seg", "object365_val_od"]
 #  TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
   CLASS_CONCAT: false
   SIZE_DIVISIBILITY: 32
@@ -272,6 +272,50 @@ SOLVER:
     NORM_TYPE: 2.0
   AMP:
     ENABLED: True
+
+OBJECT365:
+  INPUT:
+    MIN_SIZE_TRAIN: 800
+    MAX_SIZE_TRAIN: 1333
+    MIN_SIZE_TRAIN_SAMPLING: 'choice'
+    MIN_SIZE_TEST: 800
+    MAX_SIZE_TEST: 1333
+    IMAGE_SIZE: 1024
+    MIN_SCALE: 0.1
+    MAX_SCALE: 2.0
+    DATASET_MAPPER_NAME: "object365"
+    IGNORE_VALUE: 255
+    COLOR_AUG_SSD: False
+    SIZE_DIVISIBILITY: 32
+    RANDOM_FLIP: "horizontal"
+    MASK_FORMAT: "polygon"
+    FORMAT: "RGB"
+    CROP:
+      ENABLED: True
+      TYPE: "relative_range"
+      SIZE: [0.9, 0.9]
+  DATASET:
+    DATASET: 'object365'
+  TEST:
+    DETECTIONS_PER_IMAGE: 100
+    NAME: coco_eval
+    IOU_TYPE: ['bbox']
+    USE_MULTISCALE: false
+    BATCH_SIZE_TOTAL: 1
+    MODEL_FILE: ''
+    AUG:
+      ENABLED: False
+  TRAIN:
+    ASPECT_RATIO_GROUPING: true
+    BATCH_SIZE_TOTAL: 2
+    BATCH_SIZE_PER_GPU: 2
+    SHUFFLE: true
+  DATALOADER:
+    FILTER_EMPTY_ANNOTATIONS: False
+    NUM_WORKERS: 0
+    LOAD_PROPOSALS: False
+    SAMPLER_TRAIN: "TrainingSampler"
+    ASPECT_RATIO_GROUPING: True
 
 # Evaluation Dataset
 ADE20K:

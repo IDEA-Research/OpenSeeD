@@ -15,11 +15,6 @@ WEIGHT: ''
 PORT: 53711
 VERBOSE: true
 OUTPUT_DIR: '../../data/output/test'
-# misc
-LOADER:
-  JOINT: True
-  KEY_DATASET: 'coco'
-# model
 MODEL:
   NAME: openseed_model
   HEAD: openseed_head
@@ -29,37 +24,38 @@ MODEL:
   DIM_PROJ: 512
   BACKBONE_DIM: 768
   BACKGROUND: False
-  WEIGHTS: ''
   TEXT:
     ARCH: encoder
     NAME: transformer
     TOKENIZER: clip
-    CONTEXT_LENGTH: 18 # 18
+    CONTEXT_LENGTH: 77 # 77
     WIDTH: 512
     HEADS: 8
-    LAYERS: 12
+    LAYERS: 12 # 6
     AUTOGRESSIVE: True
   BACKBONE:
-    NAME: swin
-    PRETRAINED: 'https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_tiny_patch4_window7_224.pth'
-    LOAD_PRETRAINED: true
-    SWIN:
+    NAME: focal_dw
+    PRETRAINED: ''
+    LOAD_PRETRAINED: false
+    FOCAL:
       PRETRAIN_IMG_SIZE: 224
       PATCH_SIZE: 4
       EMBED_DIM: 96
       DEPTHS: [ 2, 2, 6, 2 ]
-      NUM_HEADS: [ 3, 6, 12, 24 ]
-      WINDOW_SIZE: 7
-      MLP_RATIO: 4.0
-      QKV_BIAS: true
-      QK_SCALE: ~
-      DROP_RATE: 0.0
-      ATTN_DROP_RATE: 0.0
+      FOCAL_LEVELS: [ 3, 3, 3, 3 ]
+      FOCAL_WINDOWS: [ 3, 3, 3, 3 ]
       DROP_PATH_RATE: 0.3
-      APE: false
-      PATCH_NORM: true
-      USE_CHECKPOINT: false
-      OUT_FEATURES: [ 'res2', 'res3', 'res4', 'res5' ]
+      MLP_RATIO: 4.0
+      DROP_RATE: 0.0
+      PATCH_NORM: True
+      USE_CONV_EMBED: True
+      SCALING_MODULATOR: True
+      USE_CHECKPOINT: False
+      USE_POSTLN: true
+      USE_POSTLN_IN_MODULATION: false
+      USE_LAYERSCALE: True
+      OUT_FEATURES: [ "res2", "res3", "res4", "res5" ]
+      OUT_INDICES: [ 0, 1, 2, 3 ]
   ENCODER:
     NAME: encoder_deform
     IGNORE_VALUE: 255
@@ -150,14 +146,6 @@ MODEL:
       PANO_TRANSFORM_EVAL: True
       PANO_TEMPERATURE: 0.06
 
-TEST:
-  EVAL_PERIOD: 5000
-  PRECISE_BN:
-    NUM_ITER: 1
-    ENABLED: False
-  AUG:
-    ENABLED: False
-
 COCO:
   INPUT:
     MIN_SIZE_TEST: 800
@@ -185,10 +173,6 @@ COCO:
     MODEL_FILE: ''
     AUG:
       ENABLED: False
-  TRAIN:
-    BATCH_SIZE_TOTAL: 16
-    BATCH_SIZE_PER_GPU: 2
-    SHUFFLE: true
   DATALOADER:
     FILTER_EMPTY_ANNOTATIONS: False
     NUM_WORKERS: 2
@@ -224,10 +208,12 @@ INPUT:
   PIXEL_STD: [58.395, 57.120, 57.375]
 
 DATASETS:
-  TRAIN: ["coco_2017_train_panoptic", "ade20k_panoptic_train"]
+  TRAIN: ["coco_2017_train_panoptic",]
   # open vocabulary segmentation evaluation.
   TEST: ["coco_2017_val_panoptic_with_sem_seg"]
 #  TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
+  # Supervised metrics evaluation.
+  # TEST: ["vlp_captioning_val", "refcocog_val_umd", "vlp_val"]
   CLASS_CONCAT: false
   SIZE_DIVISIBILITY: 32
   PROPOSAL_FILES_TRAIN: []
@@ -239,44 +225,11 @@ DATALOADER:
   SAMPLER_TRAIN: "TrainingSampler"
   ASPECT_RATIO_GROUPING: True
 
-# Detectron2 training config for optimizer and lr scheduler
-SOLVER:
-  BASE_LR_END: 0.0
-  MOMENTUM: 0.9
-  NESTEROV: False
-  CHECKPOINT_PERIOD: 5000
-  IMS_PER_BATCH: 16
-  REFERENCE_WORLD_SIZE: 0
-  BIAS_LR_FACTOR: 1.0
-  WEIGHT_DECAY_BIAS: None
-  # original
-  BASE_LR: 0.0001
-  STEPS: [327778, 355092]
-  MAX_ITER: 368750
-  GAMMA: 0.1
-  WARMUP_FACTOR: 1.0
-  WARMUP_ITERS: 10
-  WARMUP_METHOD: "linear"
-  WEIGHT_DECAY: 0.05
-  OPTIMIZER: "ADAMW"
-  LR_SCHEDULER_NAME: "WarmupMultiStepLR"
-  LR_MULTIPLIER:
-    backbone: 0.1
-    lang_encoder: 0.1
-  WEIGHT_DECAY_NORM: 0.0
-  WEIGHT_DECAY_EMBED: 0.0
-  CLIP_GRADIENTS:
-    ENABLED: True
-    CLIP_TYPE: "full_model"
-    CLIP_VALUE: 0.01
-    NORM_TYPE: 2.0
-  AMP:
-    ENABLED: True
 
 # Evaluation Dataset
 ADE20K:
   INPUT:
-    MIN_SIZE_TRAIN: [320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1088, 1152, 1216, 1280]
+    MIN_SIZE_TRAIN: 640
     MIN_SIZE_TRAIN_SAMPLING: "choice"
     MIN_SIZE_TEST: 640
     MAX_SIZE_TRAIN: 2560
@@ -285,56 +238,16 @@ ADE20K:
     CROP:
       ENABLED: True
       TYPE: "absolute"
-      SIZE: [640, 640]
+      SIZE: (640, 640)
       SINGLE_CATEGORY_MAX_AREA: 1.0
-    IGNORE_VALUE: 255
     COLOR_AUG_SSD: True
     SIZE_DIVISIBILITY: 640  # used in dataset mapper
     DATASET_MAPPER_NAME: "mask_former_panoptic"
     FORMAT: "RGB"
   DATASET:
     DATASET: 'ade'
-  TRAIN:
-    ASPECT_RATIO_GROUPING: true
-    BATCH_SIZE_TOTAL: 16
-    BATCH_SIZE_PER_GPU: 2
-    SHUFFLE: true
   TEST:
-    DETECTIONS_PER_IMAGE: 100
-    NAME: coco_eval
-    IOU_TYPE: ['bbox', 'segm']
-    USE_MULTISCALE: false
     BATCH_SIZE_TOTAL: 8
-    MODEL_FILE: ''
-    AUG:
-      ENABLED: False
-  DATALOADER:
-    FILTER_EMPTY_ANNOTATIONS: False
-    NUM_WORKERS: 8
-    LOAD_PROPOSALS: False
-    SAMPLER_TRAIN: "TrainingSampler"
-    ASPECT_RATIO_GROUPING: True
-#ADE20K:
-#  INPUT:
-#    MIN_SIZE_TRAIN: 640
-#    MIN_SIZE_TRAIN_SAMPLING: "choice"
-#    MIN_SIZE_TEST: 640
-#    MAX_SIZE_TRAIN: 2560
-#    MAX_SIZE_TEST: 2560
-#    MASK_FORMAT: "polygon"
-#    CROP:
-#      ENABLED: True
-#      TYPE: "absolute"
-#      SIZE: (640, 640)
-#      SINGLE_CATEGORY_MAX_AREA: 1.0
-#    COLOR_AUG_SSD: True
-#    SIZE_DIVISIBILITY: 640  # used in dataset mapper
-#    DATASET_MAPPER_NAME: "mask_former_panoptic"
-#    FORMAT: "RGB"
-#  DATASET:
-#    DATASET: 'ade'
-#  TEST:
-#    BATCH_SIZE_TOTAL: 8
 
 
 REF:
@@ -400,7 +313,7 @@ BDD:
 
 CITY:
   INPUT:
-    MIN_SIZE_TRAIN: [ 512, 614, 716, 819, 921, 1024, 1126, 1228, 1331, 1433, 1536, 1638, 1740, 1843, 1945, 2048 ]
+    MIN_SIZE_TRAIN: 1024 # !!python/object/apply:eval ["[int(x * 0.1 * 1024) for x in range(5, 21)]"]
     MIN_SIZE_TRAIN_SAMPLING: "choice"
     MIN_SIZE_TEST: 1024
     MAX_SIZE_TRAIN: 4096
@@ -408,30 +321,21 @@ CITY:
     CROP:
       ENABLED: True
       TYPE: "absolute"
-      SIZE: [ 512, 1024 ]
+      SIZE: (512, 1024)
       SINGLE_CATEGORY_MAX_AREA: 1.0
-    IGNORE_VALUE: 255
     COLOR_AUG_SSD: True
     SIZE_DIVISIBILITY: -1
     FORMAT: "RGB"
     DATASET_MAPPER_NAME: "mask_former_panoptic"
     MASK_FORMAT: "polygon"
-    TEST:
-      EVAL_PERIOD: 5000
-      BATCH_SIZE_TOTAL: 1
-      AUG:
-        ENABLED: False
-        MIN_SIZES: [ 512, 768, 1024, 1280, 1536, 1792 ]
-        MAX_SIZE: 4096
-        FLIP: True
-    DATALOADER:
-      FILTER_EMPTY_ANNOTATIONS: True
-      NUM_WORKERS: 2
-      LOAD_PROPOSALS: False
-      SAMPLER_TRAIN: "TrainingSampler"
-      ASPECT_RATIO_GROUPING: True
-    TRAIN:
-      ASPECT_RATIO_GROUPING: true
-      BATCH_SIZE_TOTAL: 2
-      BATCH_SIZE_PER_GPU: 2
-      SHUFFLE: true
+  TEST:
+    EVAL_PERIOD: 5000
+    BATCH_SIZE_TOTAL: 8
+    AUG:
+      ENABLED: False
+      MIN_SIZES: [512, 768, 1024, 1280, 1536, 1792]
+      MAX_SIZE: 4096
+      FLIP: True
+  DATALOADER:
+    FILTER_EMPTY_ANNOTATIONS: True
+    NUM_WORKERS: 4

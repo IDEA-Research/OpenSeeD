@@ -28,6 +28,7 @@ from openseed import build_model
 from utils.visualizer import Visualizer
 from utils.distributed import init_distributed
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,13 +40,12 @@ def main(args=None):
     if cmdline_args.user_dir:
         absolute_user_dir = os.path.abspath(cmdline_args.user_dir)
         opt['user_dir'] = absolute_user_dir
-
     opt = init_distributed(opt)
 
     # META DATA
     pretrained_pth = os.path.join(opt['WEIGHT'])
     output_root = './output'
-    image_pth = 'images/street.jpg'
+    image_pth = 'images/animals.png'
 
     model = BaseModel(opt, build_model(opt)).from_pretrained(pretrained_pth).eval().cuda()
 
@@ -53,25 +53,19 @@ def main(args=None):
     t.append(transforms.Resize(512, interpolation=Image.BICUBIC))
     transform = transforms.Compose(t)
 
-    thing_classes = ['car','person','traffic light', 'truck', 'motorcycle']
-    stuff_classes = ['building','sky','street','tree','rock','sidewalk']
-    thing_colors = [random_color(rgb=True, maximum=255).astype(np.int).tolist() for _ in range(len(thing_classes))]
+    stuff_classes = ['zebra','antelope','giraffe','ostrich','sky','water','grass','sand','tree']
     stuff_colors = [random_color(rgb=True, maximum=255).astype(np.int).tolist() for _ in range(len(stuff_classes))]
-    thing_dataset_id_to_contiguous_id = {x:x for x in range(len(thing_classes))}
-    stuff_dataset_id_to_contiguous_id = {x+len(thing_classes):x for x in range(len(stuff_classes))}
+    stuff_dataset_id_to_contiguous_id = {x:x for x in range(len(stuff_classes))}
 
     MetadataCatalog.get("demo").set(
-        thing_colors=thing_colors,
-        thing_classes=thing_classes,
-        thing_dataset_id_to_contiguous_id=thing_dataset_id_to_contiguous_id,
         stuff_colors=stuff_colors,
         stuff_classes=stuff_classes,
         stuff_dataset_id_to_contiguous_id=stuff_dataset_id_to_contiguous_id,
     )
-    model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(thing_classes + stuff_classes + ["background"], is_eval=False)
+    model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(stuff_classes + ["background"], is_eval=True)
     metadata = MetadataCatalog.get('demo')
     model.model.metadata = metadata
-    model.model.sem_seg_head.num_classes = len(thing_classes + stuff_classes)
+    model.model.sem_seg_head.num_classes = len(stuff_classes)
 
     with torch.no_grad():
         image_ori = Image.open(image_pth).convert("RGB")
@@ -86,21 +80,12 @@ def main(args=None):
         outputs = model.forward(batch_inputs)
         visual = Visualizer(image_ori, metadata=metadata)
 
-        pano_seg = outputs[-1]['panoptic_seg'][0]
-        pano_seg_info = outputs[-1]['panoptic_seg'][1]
-
-        for i in range(len(pano_seg_info)):
-            if pano_seg_info[i]['category_id'] in metadata.thing_dataset_id_to_contiguous_id.keys():
-                pano_seg_info[i]['category_id'] = metadata.thing_dataset_id_to_contiguous_id[pano_seg_info[i]['category_id']]
-            else:
-                pano_seg_info[i]['isthing'] = False
-                pano_seg_info[i]['category_id'] = metadata.stuff_dataset_id_to_contiguous_id[pano_seg_info[i]['category_id']]
-
-        demo = visual.draw_panoptic_seg(pano_seg.cpu(), pano_seg_info) # rgb Image
+        sem_seg = outputs[-1]['sem_seg'].max(0)[1]
+        demo = visual.draw_sem_seg(sem_seg.cpu(), alpha=0.5) # rgb Image
 
         if not os.path.exists(output_root):
             os.makedirs(output_root)
-        demo.save(os.path.join(output_root, 'pano.png'))
+        demo.save(os.path.join(output_root, 'sem.png'))
 
 
 if __name__ == "__main__":

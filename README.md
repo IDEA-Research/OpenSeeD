@@ -11,6 +11,7 @@ https://user-images.githubusercontent.com/34880758/225408795-d1e714e0-cfc8-4466-
 You can also find the more detailed demo at [video link on Youtube](https://www.youtube.com/watch?v=z4gsQw2n7iM).
 
 :point_right: **[New] demo code is available**
+:point_right: **[New] OpenSeeD has been accepted to ICCV 2023! training code is available!**
 
 ### :rocket: Key Features
 - A Simple Framework for Open-Vocabulary Segmentation and Detection.
@@ -22,7 +23,6 @@ pip3 install torch==1.13.1 torchvision==0.14.1 --extra-index-url https://downloa
 python -m pip install 'git+https://github.com/MaureenZOU/detectron2-xyz.git'
 pip install git+https://github.com/cocodataset/panopticapi.git
 python -m pip install -r requirements.txt
-sh install_cococapeval.sh
 export DATASET=/pth/to/dataset
 ```
 Download the pretrained checkpoint from [here](https://github.com/IDEA-Research/OpenSeeD/releases/download/openseed/model_state_dict_swint_51.2ap.pt).
@@ -34,9 +34,18 @@ python demo/demo_panoseg.py evaluate --conf_files configs/openseed/openseed_swin
 
 **Evaluation on coco**
 ```sh
-mpirun -n 1 python eval_openseed.py evaluate --conf_files configs/openseed/openseed_swint_lang.yaml  --overrides WEIGHT /path/to/ckpt/model_state_dict_swint_51.2ap.pt COCO.TEST.BATCH_SIZE_TOTAL 2
+python train_net.py --original_load --eval_only --num-gpus 8 --config-file configs/openseed/openseed_swint_lang.yaml MODEL.WEIGHTS=[/path/to/lang/weight](https://github.com/IDEA-Research/OpenSeeD/releases/download/openseed/model_state_dict_swint_51.2ap.pt)
 ```
 You are expected to get `55.4` PQ.
+### Training OpenSeeD baseline
+**Training on coco**
+```sh
+python train_net.py --num-gpus 8 --config-file configs/openseed/openseed_swint_lang.yaml --lang_weight [/path/to/lang/weight](https://github.com/IDEA-Research/OpenSeeD/releases/download/training/model_state_dict_only_language.pt)
+```
+**Training on coco+o365**
+```sh
+python train_net.py --num-gpus 8 --config-file configs/openseed/openseed_swint_lang_o365.yaml --lang_weight [/path/to/lang/weight](https://github.com/IDEA-Research/OpenSeeD/releases/download/training/model_state_dict_only_language.pt)
+```
 
 ![hero_figure](figs/intro.jpg)
 ### :unicorn: Model Framework

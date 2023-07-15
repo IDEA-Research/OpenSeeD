@@ -1,9 +1,10 @@
 # ------------------------------------------------------------------------
 # DINO
-# Copyright (c) 2022 IDEA. All Rights Reserved.
+# Copyright (c) 2023 IDEA. All Rights Reserved.
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
-# Modified from Mask2Former https://github.com/facebookresearch/Mask2Former by Feng Li and Hao Zhang.
+# Modified from MaskDINO https://github.com/IDEA-Research/MaskDINO by Feng Li and Hao Zhang.
+# ------------------------------------------------------------------------
 import logging
 import fvcore.nn.weight_init as weight_init
 import torch
@@ -195,15 +196,113 @@ class OpenSeeDDecoder(nn.Module):
             :param refpoint_emb: positional anchor queries in the matching part
             :param batch_size: bs
             """
+        if self.training:
+            scalar, noise_scale = self.dn_num, self.noise_scale
 
-        if not refpoint_emb is None:
-            input_query_label = tgt.repeat(batch_size, 1, 1)
-            input_query_bbox = refpoint_emb.repeat(batch_size, 1, 1)
+            known = [(torch.ones_like(t['labels'])).cuda() for t in targets]
+            know_idx = [torch.nonzero(t) for t in known]
+            known_num = [sum(k) for k in known]
+
+            # use fix number of dn queries
+            if max(known_num) > 0:
+                scalar = scalar // (int(max(known_num)))
+            else:
+                scalar = 0
+            if scalar == 0:
+                input_query_label = None
+                input_query_bbox = None
+                attn_mask = None
+                mask_dict = None
+                return input_query_label, input_query_bbox, attn_mask, mask_dict
+
+            # can be modified to selectively denosie some label or boxes; also known label prediction
+            unmask_bbox = unmask_label = torch.cat(known)
+            labels = torch.cat([t['labels'] for t in targets])
+            # use languge as denosing content queries.
+            # if task == 'det':
+            #     labels = labels  # o365 start from 133 class
+            boxes = torch.cat([t['boxes'] for t in targets])
+            batch_idx = torch.cat([torch.full_like(t['labels'].long(), i) for i, t in enumerate(targets)])
+            # known
+            known_indice = torch.nonzero(unmask_label + unmask_bbox)
+            known_indice = known_indice.view(-1)
+
+            # noise
+            known_indice = known_indice.repeat(scalar, 1).view(-1)
+            known_labels = labels.repeat(scalar, 1).view(-1)
+            known_bid = batch_idx.repeat(scalar, 1).view(-1)
+            known_bboxs = boxes.repeat(scalar, 1)
+            known_labels_expaned = known_labels.clone()
+            known_bbox_expand = known_bboxs.clone()
+
+            if noise_scale > 0:
+                diff = torch.zeros_like(known_bbox_expand)
+                diff[:, :2] = known_bbox_expand[:, 2:] / 2
+                diff[:, 2:] = known_bbox_expand[:, 2:]
+                known_bbox_expand += torch.mul((torch.rand_like(known_bbox_expand) * 2 - 1.0),
+                                               diff).cuda() * noise_scale
+                known_bbox_expand = known_bbox_expand.clamp(min=0.0, max=1.0)
+
+            m = known_labels_expaned.long().to('cuda')
+            # import ipdb; ipdb.set_trace()
+            input_label_embed = torch.gather(self.lang_encoder.default_text_embeddings, 0,
+                                             m[:, None].repeat(1, self.dim_proj)) @ self.lang_mapper
+
+            input_bbox_embed = inverse_sigmoid(known_bbox_expand)
+            single_pad = int(max(known_num))
+            pad_size = int(single_pad * scalar)
+
+            padding_label = input_label_embed.new_zeros(pad_size, self.hidden_dim)
+            padding_bbox = input_bbox_embed.new_zeros(pad_size, 4)
+
+            if not refpoint_emb is None:
+                input_query_label = torch.cat([padding_label, tgt], dim=0).repeat(batch_size, 1, 1)
+                input_query_bbox = torch.cat([padding_bbox, refpoint_emb], dim=0).repeat(batch_size, 1, 1)
+            else:
+                input_query_label = padding_label.repeat(batch_size, 1, 1)
+                input_query_bbox = padding_bbox.repeat(batch_size, 1, 1)
+
+            # map
+            map_known_indice = input_label_embed.new_tensor([])
+            if len(known_num):
+                map_known_indice = torch.cat(
+                    [input_label_embed.new_tensor(range(num)) for num in known_num])  # [1,2, 1,2,3]
+                map_known_indice = torch.cat([map_known_indice + single_pad * i for i in range(scalar)]).long()
+            if len(known_bid):
+                input_query_label[(known_bid.long(), map_known_indice)] = input_label_embed
+                input_query_bbox[(known_bid.long(), map_known_indice)] = input_bbox_embed
+
+            tgt_size = pad_size + self.num_queries
+            attn_mask = input_label_embed.new_ones(tgt_size, tgt_size) < 0
+            # match query cannot see the reconstruct
+            attn_mask[pad_size:, :pad_size] = True
+            # reconstruct cannot see each other
+            for i in range(scalar):
+                if i == 0:
+                    attn_mask[single_pad * i:single_pad * (i + 1), single_pad * (i + 1):pad_size] = True
+                if i == scalar - 1:
+                    attn_mask[single_pad * i:single_pad * (i + 1), :single_pad * i] = True
+                else:
+                    attn_mask[single_pad * i:single_pad * (i + 1), single_pad * (i + 1):pad_size] = True
+                    attn_mask[single_pad * i:single_pad * (i + 1), :single_pad * i] = True
+            mask_dict = {
+                'known_indice': torch.as_tensor(known_indice).long(),
+                'batch_idx': torch.as_tensor(batch_idx).long(),
+                'map_known_indice': torch.as_tensor(map_known_indice).long(),
+                'known_lbs_bboxes': (known_labels, known_bboxs),
+                'know_idx': know_idx,
+                'pad_size': pad_size,
+                'scalar': scalar,
+            }
         else:
-            input_query_label = None
-            input_query_bbox = None
-        attn_mask = None
-        mask_dict = None
+            if not refpoint_emb is None:
+                input_query_label = tgt.repeat(batch_size, 1, 1)
+                input_query_bbox = refpoint_emb.repeat(batch_size, 1, 1)
+            else:
+                input_query_label = None
+                input_query_bbox = None
+            attn_mask = None
+            mask_dict = None
 
         # 100*batch*256
         if not input_query_bbox is None:
@@ -264,7 +363,7 @@ class OpenSeeDDecoder(nn.Module):
         task: seg/det
         """
         assert len(x) == self.num_feature_levels
-        do_seg = True
+        do_seg = (task != 'det')   # if task is det, not do segmentation training
         size_list = []
         # disable mask, it does not affect performance
         enable_mask = 0
@@ -378,7 +477,7 @@ class OpenSeeDDecoder(nn.Module):
         else:
             out_boxes = self.pred_box(references, hs)
         if mask_dict is not None:
-            predictions_mask = torch.stack(predictions_mask)
+            predictions_mask = None if not do_seg else torch.stack(predictions_mask)
             predictions_class =torch.stack(predictions_class)
             predictions_class, out_boxes,predictions_mask=\
                 self.dn_post_process(predictions_class, out_boxes, mask_dict, predictions_mask)
@@ -390,10 +489,19 @@ class OpenSeeDDecoder(nn.Module):
                     predictions_class[-1] = predictions_class[-1] + 0.0 * (self.mask_embed.layers[i].weight[0][0] + self.mask_embed.layers[i].bias[0])  # avoid no mask loss
                 predictions_class[-1] = predictions_class[-1] + 0.0 * mask_features[0][0][0][0]  # avoid no mask loss
 
-            predictions_mask = list(predictions_mask)
+            if do_seg:
+                predictions_mask = list(predictions_mask)
+        elif self.training:  # this is to insure self.label_enc participate in the model
+            predictions_class[-1] = predictions_class[-1] + 0.0 * self.lang_mapper[0, 0]
+            for i in range(self.mask_embed.num_layers):
+                predictions_class[-1] = predictions_class[-1] + 0.0 * (
+                            self.mask_embed.layers[i].weight[0][0] + self.mask_embed.layers[i].bias[
+                        0])  # avoid no mask loss
+            predictions_class[-1] = predictions_class[-1] + 0.0 * mask_features[0][0][0][0]  # avoid no mask loss
+
         out = {
             'pred_logits': predictions_class[-1],
-            'pred_masks': predictions_mask[-1],
+            'pred_masks': None if not do_seg else predictions_mask[-1],
             'pred_boxes':out_boxes[-1],
             'aux_outputs': self._set_aux_loss(
                 predictions_class if self.mask_classification else None, predictions_mask,out_boxes

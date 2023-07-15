@@ -363,7 +363,7 @@ def get_metadata():
 
     meta["thing_dataset_id_to_contiguous_id"] = thing_dataset_id_to_contiguous_id
     meta["stuff_dataset_id_to_contiguous_id"] = stuff_dataset_id_to_contiguous_id
-    meta["object_mask_threshold"] = 0.4
+
     return meta
 
 

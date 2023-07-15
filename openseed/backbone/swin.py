@@ -886,7 +886,7 @@ def get_swin_backbone(cfg):
     if cfg['MODEL']['BACKBONE']['LOAD_PRETRAINED'] is True:
         filename = cfg['MODEL']['BACKBONE']['PRETRAINED']
         with PathManager.open(filename, "rb") as f:
-            ckpt = torch.load(f, map_location=cfg['device'])['model']
+            ckpt = torch.load(f, map_location='cpu')['model']
         swin.load_weights(ckpt, swin_cfg.get('PRETRAINED_LAYERS', ['*']), cfg['VERBOSE'])
 
     return swin

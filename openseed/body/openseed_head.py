@@ -80,7 +80,12 @@ class OpenSeeDHead(nn.Module):
 
     def layers(self, features, mask=None,targets=None, target_queries=None, target_vlp=None, task='seg', extra={}):
         mask_features, transformer_encoder_features, multi_scale_features = self.pixel_decoder.forward_features(features, mask)
-        predictions = self.predictor(multi_scale_features, mask_features, mask, targets=targets,
+        if task == 'teacher':
+            predictions = self.predictor.forward_teacher(multi_scale_features, mask_features, mask, targets=targets,
+                                                         target_queries=target_queries, target_vlp=target_vlp,
+                                                         task=task, extra=extra)
+        else:
+            predictions = self.predictor(multi_scale_features, mask_features, mask, targets=targets,
                                          target_queries=target_queries, target_vlp=target_vlp, task=task, extra=extra)
         return predictions
 
