@@ -1,10 +1,10 @@
 # ------------------------------------------------------------------------
-# Copyright (c) 2022 IDEA. All Rights Reserved.
+# Copyright (c) 2023 IDEA. All Rights Reserved.
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # by Feng Li and Hao Zhang.
 # ------------------------------------------------------------------------
 """
-MaskDINO Training Script based on Mask2Former.
+OpenSeed Training Script based on MaskDINO.
 """
 try:
     from shapely.errors import ShapelyDeprecationWarning
