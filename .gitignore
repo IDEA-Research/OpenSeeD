@@ -3,7 +3,8 @@
 *.iml
 out
 gen
-
+*.out
+.gitignore
 ### Vim template
 [._]*.s[a-w][a-z]
 [._]s[a-w][a-z]

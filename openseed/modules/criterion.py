@@ -3,7 +3,7 @@
 # Copyright (c) 2023 IDEA. All Rights Reserved.
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
-# Modified from MaskDINO https://github.com/IDEA-Research/MaskDINO by Feng Li and Hao Zhang.
+# Modified from MaskDINO https://github.com/IDEA-Research/MaskDINO by Hao Zhang and  Feng Li.
 # ------------------------------------------------------------------------
 """
 MaskFormer criterion.
@@ -23,6 +23,7 @@ from detectron2.projects.point_rend.point_features import (
 
 from ..utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list, _max_by_axis
 from ..utils import box_ops
+import random
 
 
 def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2):
@@ -391,6 +392,7 @@ class SetCriterion(nn.Module):
     def get_loss(self, loss, outputs, targets, indices, num_masks=None, layer_id=None, extra=None):
         loss_map = {
             'labels': self.loss_labels_ce if self.semantic_ce_loss else self.loss_labels,
+            'labels_dn': self.loss_labels_ce if self.semantic_ce_loss else self.loss_labels_masked,
             'dn_labels': self.loss_labels_ce if self.semantic_ce_loss else self.loss_labels_masked,
             'masks': self.loss_masks,
             'boxes': self.loss_boxes_panoptic if self.panoptic_on else self.loss_boxes,
@@ -411,7 +413,7 @@ class SetCriterion(nn.Module):
         if task == 'det' or task == 'seg_from_teacher':
             match_cost = ["cls", "box"]
         # Retrieve the matching between the outputs of the last layer and the targets
-        if self.dn is not "no" and mask_dict is not None:
+        if self.dn != "no" and mask_dict is not None:
             output_known_lbs_bboxes,num_tgt,single_pad,scalar = self.prep_for_dn(mask_dict)
             exc_idx = []
             for i in range(len(targets)):
@@ -424,6 +426,11 @@ class SetCriterion(nn.Module):
                 else:
                     output_idx = tgt_idx = torch.tensor([]).long().cuda()
                 exc_idx.append((output_idx, tgt_idx))
+        extra=dict()
+        if task == "seg":
+            extra['split_pano']={'n_q_th':300} #
+        else:
+            extra['split_pano'] = None
         indices = self.matcher(outputs_without_aux, targets, match_cost, extra=extra)
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
@@ -446,6 +453,8 @@ class SetCriterion(nn.Module):
             for loss in self.dn_losses:
                 if task == 'det' and loss == 'masks':
                     continue  # not compute mask loss for detection data only
+                if loss == 'labels':
+                    loss='labels_dn'
                 l_dict.update(self.get_loss(loss, output_known_lbs_bboxes, targets, exc_idx, num_masks*scalar, layer_id=0))
             l_dict = {k + f'_dn': v for k, v in l_dict.items()}
             losses.update(l_dict)
@@ -462,7 +471,7 @@ class SetCriterion(nn.Module):
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
-                indices = self.matcher(aux_outputs, targets, match_cost)
+                indices = self.matcher(aux_outputs, targets, match_cost, extra=extra)
                 for loss in self.losses:
                     if task == 'det' and loss == 'masks':
                         continue  # not compute mask loss for detection data only
@@ -480,6 +489,8 @@ class SetCriterion(nn.Module):
                         for loss in self.dn_losses:
                             if task == 'det' and loss == 'masks':
                                 continue  # not compute mask loss for detection data only
+                            if loss == 'labels':
+                                loss = 'labels_dn'
                             l_dict.update(
                                 self.get_loss(loss, out_, targets, exc_idx, num_masks * scalar, layer_id=(i+1), extra=extra))
                         l_dict = {k.replace('_0', f"_{i+1}_dn"): v for k, v in l_dict.items()}
@@ -497,7 +508,7 @@ class SetCriterion(nn.Module):
         # interm_outputs loss
         if 'interm_outputs' in outputs:
             interm_outputs = outputs['interm_outputs']
-            indices = self.matcher(interm_outputs, targets, match_cost)
+            indices = self.matcher(interm_outputs, targets, match_cost, extra=extra)
             full_set = ['labels', 'masks', 'boxes']
             for loss in list(set(self.losses) and set(full_set)):
                 if task == 'det' and loss == 'masks':

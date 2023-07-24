@@ -3,7 +3,7 @@
 # Copyright (c) 2023 IDEA. All Rights Reserved.
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
-# Modified from MaskDINO https://github.com/IDEA-Research/MaskDINO by Feng Li and Hao Zhang.
+# Modified from MaskDINO https://github.com/IDEA-Research/MaskDINO by Hao Zhang and Feng Li.
 # ------------------------------------------------------------------------
 
 """
@@ -105,7 +105,7 @@ class HungarianMatcher(nn.Module):
         self.num_points = num_points
 
     @torch.no_grad()
-    def memory_efficient_forward(self, outputs, targets, cost=["cls", "box", "mask"]):
+    def memory_efficient_forward(self, outputs, targets, cost=["cls", "box", "mask"],split_pano=None):
         """More memory-friendly matching. Change cost to compute only certain loss in matching"""
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
@@ -185,6 +185,11 @@ class HungarianMatcher(nn.Module):
                 + self.cost_giou*cost_giou
             )
             C = C.reshape(num_queries, -1).cpu()
+            if split_pano is not None:
+                n_q_th=split_pano['n_q_th']
+                th_mask=tgt_ids<80 # There are 80 COCO thing classes (should be modified when trained with other panoptic datasets)
+                C[n_q_th:,th_mask]=1e4
+                C[:n_q_th,~th_mask]=1e4
             indices.append(linear_sum_assignment(C))
 
         return [
@@ -214,7 +219,11 @@ class HungarianMatcher(nn.Module):
                 len(index_i) = len(index_j) = min(num_queries, num_target_boxes)
         """
         if mode == 'default':
-            return self.memory_efficient_forward(outputs, targets, cost)
+            if extra is not None:
+                split_pano = extra.get('split_pano', None)
+            else:
+                split_pano=None
+            return self.memory_efficient_forward(outputs, targets, cost,split_pano=split_pano)
         else:
             assert False, "Mode {} is not supported.".format(mode)
 
