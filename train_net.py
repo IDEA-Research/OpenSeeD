@@ -37,7 +37,7 @@ from detectron2.utils.logger import setup_logger
 from detectron2.config import LazyConfig, instantiate
 
 from utils.arguments import load_opt_command
-from utils.distributed import init_distributed, is_main_process, apply_distributed, synchronize
+from detectron2.utils.comm import get_world_size, is_main_process
 
 # MaskDINO
 

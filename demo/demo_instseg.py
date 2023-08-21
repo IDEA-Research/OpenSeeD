@@ -1,10 +1,3 @@
-# --------------------------------------------------------
-# X-Decoder -- Generalized Decoding for Pixel, Image, and Language
-# Copyright (c) 2022 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Xueyan Zou (xueyan@cs.wisc.edu)
-# --------------------------------------------------------
-
 import os
 import sys
 import logging
@@ -27,7 +20,6 @@ from openseed.BaseModel import BaseModel
 from openseed import build_model
 from detectron2.utils.colormap import random_color
 from utils.visualizer import Visualizer
-from utils.distributed import init_distributed
 
 
 logger = logging.getLogger(__name__)
@@ -42,12 +34,12 @@ def main(args=None):
         absolute_user_dir = os.path.abspath(cmdline_args.user_dir)
         opt['user_dir'] = absolute_user_dir
 
-    opt = init_distributed(opt)
+    # opt = init_distributed(opt)
 
     # META DATA
     pretrained_pth = os.path.join(opt['WEIGHT'])
     output_root = './output'
-    image_pth = 'images/owls.jpeg'
+    image_pth = cmdline_args.image_path
 
     model = BaseModel(opt, build_model(opt)).from_pretrained(pretrained_pth).eval().cuda()
 
@@ -55,7 +47,7 @@ def main(args=None):
     t.append(transforms.Resize(800, interpolation=Image.BICUBIC))
     transform = transforms.Compose(t)
 
-    thing_classes = ["owl"]
+    thing_classes=["zebra","giraffe","tree","ostrich"]
     thing_colors = [random_color(rgb=True, maximum=255).astype(np.int).tolist() for _ in range(len(thing_classes))]
     thing_dataset_id_to_contiguous_id = {x:x for x in range(len(thing_classes))}
 
@@ -65,7 +57,7 @@ def main(args=None):
         thing_dataset_id_to_contiguous_id=thing_dataset_id_to_contiguous_id,
     )
     # model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(thing_classes + ["background"], is_eval=False)
-    model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(thing_classes, is_eval=False)
+    model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(thing_classes, is_eval=True)
     metadata = MetadataCatalog.get('demo')
     model.model.metadata = metadata
     model.model.sem_seg_head.num_classes = len(thing_classes)

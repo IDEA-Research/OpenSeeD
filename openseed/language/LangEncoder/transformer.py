@@ -11,7 +11,7 @@ from torch import nn
 from timm.models.layers import DropPath, trunc_normal_
 
 from .registry import register_lang_encoder
-from utils.distributed import is_main_process
+from detectron2.utils.comm import is_main_process
 from utils.model import register_norm_module
 
 logger = logging.getLogger(__name__)

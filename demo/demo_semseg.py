@@ -26,7 +26,6 @@ from detectron2.utils.colormap import random_color
 from openseed.BaseModel import BaseModel
 from openseed import build_model
 from utils.visualizer import Visualizer
-from utils.distributed import init_distributed
 
 
 logger = logging.getLogger(__name__)
@@ -40,7 +39,6 @@ def main(args=None):
     if cmdline_args.user_dir:
         absolute_user_dir = os.path.abspath(cmdline_args.user_dir)
         opt['user_dir'] = absolute_user_dir
-    opt = init_distributed(opt)
 
     # META DATA
     pretrained_pth = os.path.join(opt['WEIGHT'])
@@ -62,7 +60,7 @@ def main(args=None):
         stuff_classes=stuff_classes,
         stuff_dataset_id_to_contiguous_id=stuff_dataset_id_to_contiguous_id,
     )
-    model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(stuff_classes + ["background"], is_eval=True)
+    model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(stuff_classes, is_eval=True)
     metadata = MetadataCatalog.get('demo')
     model.model.metadata = metadata
     model.model.sem_seg_head.num_classes = len(stuff_classes)
@@ -77,9 +75,8 @@ def main(args=None):
         images = torch.from_numpy(image.copy()).permute(2,0,1).cuda()
 
         batch_inputs = [{'image': images, 'height': height, 'width': width}]
-        outputs = model.forward(batch_inputs)
+        outputs = model.forward(batch_inputs,inference_task="sem_seg")
         visual = Visualizer(image_ori, metadata=metadata)
-
         sem_seg = outputs[-1]['sem_seg'].max(0)[1]
         demo = visual.draw_sem_seg(sem_seg.cpu(), alpha=0.5) # rgb Image
 

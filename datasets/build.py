@@ -51,7 +51,7 @@ from .evaluation import (InstanceSegEvaluator,
                          COCOPanopticEvaluator,
 )
 from openseed.utils import configurable
-from utils.distributed import get_world_size
+from detectron2.utils.comm import get_world_size
 from typing import Any, Dict, List, Set
 
 class JointLoader(torchdata.IterableDataset):

@@ -20,7 +20,7 @@ class BaseModel(nn.Module):
         return outputs
 
     def save_pretrained(self, save_dir):
-        torch.save(self.model.state_dict(), save_path)
+        torch.save(self.model.state_dict(), save_dir)
 
     def from_pretrained(self, load_dir):
         state_dict = torch.load(load_dir, map_location='cpu')

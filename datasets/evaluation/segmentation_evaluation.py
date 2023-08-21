@@ -13,7 +13,7 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.utils.comm import all_gather, is_main_process
 from detectron2.utils.file_io import PathManager
 from detectron2.evaluation.evaluator import DatasetEvaluator
-from utils.distributed import synchronize
+from detectron2.utils.comm import synchronize
 
 from ..semseg_loader import load_semseg
 

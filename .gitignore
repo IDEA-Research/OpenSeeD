@@ -2,6 +2,7 @@
 .idea
 *.iml
 out
+output
 gen
 *.out
 .gitignore

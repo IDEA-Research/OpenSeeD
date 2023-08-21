@@ -28,7 +28,7 @@ export DATASET=/pth/to/dataset
 Download the pretrained checkpoint from [here](https://github.com/IDEA-Research/OpenSeeD/releases/download/openseed/model_state_dict_swint_51.2ap.pt).
 ### :bulb: Demo script
 ```sh
-python demo/demo_panoseg.py evaluate --conf_files configs/openseed/openseed_swint_lang.yaml  --image_path images/your_image.jpg --overrides WEIGHT /path/to/ckpt/model_state_dict_swint_51.2ap.pt
+python demo/demo_panoseg.py evaluate --conf_files configs/openseed/openseed_swint_lang.yaml  --image_path images/animals.png --overrides WEIGHT /path/to/ckpt/model_state_dict_swint_51.2ap.pt
 ```
 :fire: Remember to **modify the vocabulary**  `thing_classes` and `stuff_classes` in `demo_panoseg.py`  if your want to segment open-vocabulary objects.
 
