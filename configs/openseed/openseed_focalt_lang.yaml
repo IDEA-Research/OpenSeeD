@@ -209,11 +209,8 @@ INPUT:
 
 DATASETS:
   TRAIN: ["coco_2017_train_panoptic",]
-  # open vocabulary segmentation evaluation.
   TEST: ["coco_2017_val_panoptic_with_sem_seg"]
-#  TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
-  # Supervised metrics evaluation.
-  # TEST: ["vlp_captioning_val", "refcocog_val_umd", "vlp_val"]
+
   CLASS_CONCAT: false
   SIZE_DIVISIBILITY: 32
   PROPOSAL_FILES_TRAIN: []

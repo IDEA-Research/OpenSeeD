@@ -224,10 +224,8 @@ INPUT:
   PIXEL_STD: [58.395, 57.120, 57.375]
 
 DATASETS:
-  TRAIN: ["coco_2017_train_panoptic", "ade20k_panoptic_train"]
-  # open vocabulary segmentation evaluation.
+  TRAIN: ["coco_2017_train_panoptic"]
   TEST: ["coco_2017_val_panoptic_with_sem_seg"]
-#  TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
   CLASS_CONCAT: false
   SIZE_DIVISIBILITY: 32
   PROPOSAL_FILES_TRAIN: []
@@ -314,27 +312,6 @@ ADE20K:
     LOAD_PROPOSALS: False
     SAMPLER_TRAIN: "TrainingSampler"
     ASPECT_RATIO_GROUPING: True
-#ADE20K:
-#  INPUT:
-#    MIN_SIZE_TRAIN: 640
-#    MIN_SIZE_TRAIN_SAMPLING: "choice"
-#    MIN_SIZE_TEST: 640
-#    MAX_SIZE_TRAIN: 2560
-#    MAX_SIZE_TEST: 2560
-#    MASK_FORMAT: "polygon"
-#    CROP:
-#      ENABLED: True
-#      TYPE: "absolute"
-#      SIZE: (640, 640)
-#      SINGLE_CATEGORY_MAX_AREA: 1.0
-#    COLOR_AUG_SSD: True
-#    SIZE_DIVISIBILITY: 640  # used in dataset mapper
-#    DATASET_MAPPER_NAME: "mask_former_panoptic"
-#    FORMAT: "RGB"
-#  DATASET:
-#    DATASET: 'ade'
-#  TEST:
-#    BATCH_SIZE_TOTAL: 8
 
 
 REF:
