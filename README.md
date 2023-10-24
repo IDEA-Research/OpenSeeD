@@ -37,6 +37,8 @@ python demo/demo_panoseg.py evaluate --conf_files configs/openseed/openseed_swin
 python train_net.py --original_load --eval_only --num-gpus 8 --config-file configs/openseed/openseed_swint_lang.yaml MODEL.WEIGHTS=[/path/to/lang/weight](https://github.com/IDEA-Research/OpenSeeD/releases/download/openseed/model_state_dict_swint_51.2ap.pt)
 ```
 You are expected to get `55.4` PQ.
+### :bulb: Some coco-format data
+Here is the coco-format json file for evaluating [BDD](https://github.com/IDEA-Research/OpenSeeD/releases/download/bdd_val_data/coco_val.json).
 ### Training OpenSeeD baseline
 **Training on coco**
 ```sh
