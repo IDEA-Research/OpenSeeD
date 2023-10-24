@@ -38,7 +38,7 @@ python train_net.py --original_load --eval_only --num-gpus 8 --config-file confi
 ```
 You are expected to get `55.4` PQ.
 ### :bulb: Some coco-format data
-Here is the coco-format json file for evaluating [BDD](https://github.com/IDEA-Research/OpenSeeD/releases/download/bdd_val_data/coco_val.json).
+Here is the coco-format json file for evaluating [BDD](https://github.com/IDEA-Research/OpenSeeD/releases/download/bdd_val_data/coco_val.json) and [SUN](https://github.com/IDEA-Research/OpenSeeD/releases/tag/sun_data).
 ### Training OpenSeeD baseline
 **Training on coco**
 ```sh
