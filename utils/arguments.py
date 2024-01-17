@@ -46,6 +46,39 @@ def load_opt_from_config_files(conf_files):
 
     return opt
 
+def load_opt_ray(args):
+    opt = load_opt_from_config_files(args["conf_files"])
+
+    if args["config_overrides"]:
+        config_overrides_string = ' '.join(args["config_overrides"])
+        logger.warning(f"args config overrides: {config_overrides_string}")
+        config_dict = json.loads(config_overrides_string)
+        load_config_dict_to_opt(opt, config_dict)
+
+    if args["overrides"]:
+        assert len(args["overrides"]) % 2 == 0, "overrides arguments is not paired, required: key value"
+        keys = [args["overrides"][idx*2] for idx in range(len(args["overrides"])//2)]
+        vals = [args["overrides"][idx*2+1] for idx in range(len(args["overrides"])//2)]
+        vals = [val.replace('false', '').replace('False','') if len(val.replace(' ', '')) == 5 else val for val in vals]
+
+        types = []
+        for key in keys:
+            key = key.split('.')
+            ele = opt.copy()
+            while len(key) > 0:
+                ele = ele[key.pop(0)]
+            types.append(type(ele))
+        
+        config_dict = {x:z(y) for x,y,z in zip(keys, vals, types)}
+        load_config_dict_to_opt(opt, config_dict)
+
+    # combine args into opt dictionary
+    for key, val in args.items():
+        if val is not None:
+            opt[key] = val
+
+    return opt
+
 
 def load_opt_command(args):
     parser = argparse.ArgumentParser(description='Pretrain or fine-tune models for NLP tasks.')
