@@ -48,7 +48,10 @@ python train_net.py --num-gpus 8 --config-file configs/openseed/openseed_swint_l
 ```sh
 python train_net.py --num-gpus 8 --config-file configs/openseed/openseed_swint_lang_o365.yaml --lang_weight [/path/to/lang/weight](https://github.com/IDEA-Research/OpenSeeD/releases/download/training/model_state_dict_only_language.pt)
 ```
-
+### Checkpoints
+- Swin-T model trained on COCO panoptic segmentation and Objects365 [weights](https://github.com/IDEA-Research/OpenSeeD/releases/tag/ckpt_swint_coco_o365).
+- Swin-L model fine-tuned on COCO panoptic segmentation [weights](https://github.com/IDEA-Research/OpenSeeD/releases/tag/coco_pano_sota_swinl).
+- Swin-L model fine-tuned on ADE20K semantic segmentation [weights](https://github.com/IDEA-Research/OpenSeeD/releases/tag/ade20k_swinl).
 ![hero_figure](figs/intro.jpg)
 ### :unicorn: Model Framework
 ![hero_figure](figs/framework.jpg)
